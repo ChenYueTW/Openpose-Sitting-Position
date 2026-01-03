@@ -1,2 +1,7 @@
 v0.1
 1. Optimize code
+
+v0.2
+1. Front and Side camera use Chessboard to calibration
+2. Try to use 3d estimator
+3. fix side camera calculate_neck_angle function error

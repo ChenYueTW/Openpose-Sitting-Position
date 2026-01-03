@@ -11,6 +11,16 @@ class FrontSystem:
         self.cap.set(3, 640)
         self.cap.set(4, 480)
 
+        # Reprojection Error 0.12977
+        self.K = np.array([
+            [916.86916, 0.0, 632.03174],
+            [0.0, 917.45823, 392.08485],
+            [0.0, 0.0, 1.0]
+        ], dtype=np.float32)
+        self.D = np.array([
+            0.05881, -0.09019, 0.00016, 0.00172, 0.0209
+        ], dtype=np.float32)
+
         if not self.cap.isOpened():
             print(f"Camera {camera_id} not found!")
 
@@ -21,6 +31,10 @@ class FrontSystem:
         self.total_frames = 0
         self.valid_count = 0
         print("Front Counters Reset!")
+    
+    def release(self):
+        if self.cap.isOpened():
+            self.cap.release()
 
     def process(self, image, keypoints_list):
         if not self.cap.isOpened():
@@ -29,6 +43,8 @@ class FrontSystem:
         ret, frame = self.cap.read()
         if not ret:
             return np.zeros((480, 640, 3), dtype=np.uint8)
+
+        frame = cv2.undistort(raw_frame, self.K, self.D)
         
         self.total_frames += 1
 

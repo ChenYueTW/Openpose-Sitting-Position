@@ -12,7 +12,8 @@ def calculate_neck_angle(ear_pt, shoulder_pt):
     dx = abs(ex - sx)
     dy = abs(sx - sy)
     
-    if dx == 0: dx = 0.0001
+    if dx == 0:
+        dx = 0.0001
         radian = math.atan2(dy, dx) 
         return math.degrees(radian)
 
@@ -29,8 +30,15 @@ class SideSystem:
         self.total_frames = 0
         self.valid_count = 0
         
-        self.K = np.array([[640, 0, 480], [0, 640, 240], [0, 0, 1]], dtype=np.float32)
-        self.D = np.array([-0.06, -0.2, 0.0, 0.0], dtype=np.float32)
+        # Reprojection Error 0.05949
+        self.K = np.array([
+            [752.75825, 0.0, 638.23156],
+            [0.0, 751.44076, 360.50859],
+            [0.0, 0.0, 1.0]
+        ], dtype=np.float32)
+        self.D = np.array([
+            -0.33029, 0.13842, 0.00041, -0.03133
+        ], dtype=np.float32)
 
         self.TARGET_ANGLE = 55
 
