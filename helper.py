@@ -24,6 +24,11 @@ def init_openpose():
     params["net_resolution"] = "-1x160"
     params["model_pose"] = "BODY_25"
     params["number_people_max"] = 1
+    
+    params["3d"] = True
+    params["3d_min_views"] = 2
+    params["camera_parameter_path"] = "./camera_parameters"
+    params["3d_views"] = 1
 
     wrapper = op.WrapperPython()
     wrapper.configure(params)
