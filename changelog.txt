@@ -12,3 +12,8 @@ v0.3
 v0.4
 1. Add 3d views config
 2. Add 3d main 
+
+v0.5
+1. BIG CHANGE!!
+2. Add shoulder height detect
+3. Add neck degree

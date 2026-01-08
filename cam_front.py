@@ -1,97 +1,105 @@
 import cv2
 import numpy as np
-import helper
+import math
+import time
 
-confidence = 0.1
-
-class FrontSystem:
-    def __init__(self, camera_id=0):
-        self.cap = cv2.VideoCapture(camera_id)
-        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M','J','P','G'))
-        self.cap.set(3, 640)
-        self.cap.set(4, 480)
-
-        # Reprojection Error 0.12977
-        self.K = np.array([
-            [916.86916, 0.0, 632.03174],
-            [0.0, 917.45823, 392.08485],
-            [0.0, 0.0, 1.0]
-        ], dtype=np.float32)
-        self.D = np.array([
-            0.05881, -0.09019, 0.00016, 0.00172, 0.0209
-        ], dtype=np.float32)
-
-        if not self.cap.isOpened():
-            print(f"Camera {camera_id} not found!")
-
-        self.total_frames = 0
-        self.valid_count = 0
-
-    def reset(self):
-        self.total_frames = 0
-        self.valid_count = 0
-        print("Front Counters Reset!")
-    
-    def release(self):
-        if self.cap.isOpened():
-            self.cap.release()
-
-    def process(self, image, keypoints_list):
-        if not self.cap.isOpened():
-            return np.zeros((480, 640, 3), dtype=np.uint8)
-
-        ret, frame = self.cap.read()
-        if not ret:
-            return np.zeros((480, 640, 3), dtype=np.uint8)
-
-        frame = cv2.undistort(raw_frame, self.K, self.D)
+class CamFront:
+    def __init__(self):
+        self.id = 0
+        self.cap = None
         
-        self.total_frames += 1
+        # 內參矩陣
+        self.K = np.array([[916.86916, 0.0, 632.03174], [0.0, 917.45823, 392.08485], [0.0, 0.0, 1.0]], dtype=np.float32)
+        self.D = np.array([0.05881, -0.09019, 0.00016, 0.00172, 0.0209], dtype=np.float32)
+        
+        # 狀態變數
+        self.standard_shoulder_y = None # 校準線
+        self.hunch_thresh = 20
 
-        keypoints_list, rendered_img = helper.get_keypoints(op_wrapper, op_lib, frame)
-        image = rendered_img if rendered_img is not None else frame
+    def open(self):
+        print(f">>> 開啟 Front Cam (ID: {self.id})...")
+        self.cap = cv2.VideoCapture(self.id)
+        self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'))
+        self.cap.set(3, 640); self.cap.set(4, 480)
+        time.sleep(1.0)
+        return self.cap.isOpened()
 
-        is_detected = False
+    def close(self):
+        if self.cap: self.cap.release()
 
-        if keypoints_list is not None and len(keypoints_list) > 0:
-            keypoints = keypoints_list[0]
-            left_shoulder = keypoints[5]
-            right_shoulder = keypoints[2] 
-            
-            if left_shoulder[2] > confidence and right_shoulder[2] > confidence:
-                x1, y1 = int(left_shoulder[0]), int(left_shoulder[1])
-                x2, y2 = int(right_shoulder[0]), int(right_shoulder[1])
+    def set_calibration(self, y_val):
+        """ 由主程式呼叫，設定標準高度 """
+        self.standard_shoulder_y = y_val
+        print(f"[Front] 校準完成，標準線 Y = {y_val:.1f}")
 
-                if not ((x1 == 0 and y1 == 0) or (x2 == 0 and y2 == 0)):
-                    is_detected = True
+    def process_frame(self, pose_estimator):
+        """ 讀取 -> 去畸變 -> 偵測 -> 計算邏輯 -> 繪圖 """
+        if not self.cap: return None, None
+        
+        ret, raw_frame = self.cap.read()
+        if not ret: return None, None
 
-                    delta_y = abs(y1 - y2)
-                    delta_x = abs(x1 - x2)
+        # 1. 去畸變
+        img = cv2.undistort(raw_frame, self.K, self.D)
 
-                    if delta_x == 0: slope_percent = 0
-                    else: slope_percent = (delta_y / delta_x) * 100
+        # 2. 骨架偵測 (使用傳入的 Pose 物件)
+        kps, drawn_img = pose_estimator.detect(img)
+        if drawn_img is None: drawn_img = img
 
-                    if slope_percent < 2.0: 
-                        color = (0, 255, 0); status = "Good"
-                    elif slope_percent < 5.0: 
-                        color = (0, 255, 255); status = "Tilt"
-                    else: 
-                        color = (0, 0, 255); status = "Bad"
+        calib_val = None # 用於回傳給主程式
 
-                    cv2.line(image, (x1, y1), (x2, y2), color, 2)
+        # 3. 邏輯處理 (如果有點)
+        if kps is not None and len(kps) > 0:
+            p1 = kps[0]
+            f_rsh, f_lsh = p1[2][:2], p1[5][:2] # 2:右肩, 5:左肩
+
+            if f_rsh[0] > 0 and f_lsh[0] > 0:
+                # --- A. Tilt (傾斜) ---
+                dy = f_lsh[1] - f_rsh[1]
+                dx = f_lsh[0] - f_rsh[0]
+                if dx == 0: dx = 0.0001
+                angle = abs(math.degrees(math.atan2(dy, dx)))
+                if angle > 90: angle = 180 - angle
+                
+                tilt_status = "Good"
+                tilt_color = (0, 255, 0)
+                if angle > 5:
+                    tilt_status = "BAD"
+                    tilt_color = (0, 0, 255)
+
+                # --- B. Hunch (駝背) ---
+                avg_y = (f_lsh[1] + f_rsh[1]) / 2.0
+                calib_val = avg_y # 這就是當下可用的校準值
+                
+                # 找最低點
+                lowest_y = max(f_lsh[1], f_rsh[1])
+                lowest_pt = (int(f_lsh[0]), int(f_lsh[1])) if f_lsh[1] > f_rsh[1] else (int(f_rsh[0]), int(f_rsh[1]))
+
+                hunch_txt = "Press 'c'"
+                hunch_col = (255, 255, 0)
+
+                if self.standard_shoulder_y is not None:
+                    diff = lowest_y - self.standard_shoulder_y
                     
-                    text = f"Slope: {slope_percent:.1f}% ({status})"
-                    mid_x, mid_y = int((x1 + x2) / 2), int((y1 + y2) / 2) - 20
-                    (w, h), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-                    cv2.rectangle(image, (mid_x - 10, mid_y - h - 10), (mid_x + w + 10, mid_y + 10), (0,0,0), -1)
-                    cv2.putText(image, text, (mid_x, mid_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                    # 畫標準線與距離線
+                    line_y = int(self.standard_shoulder_y)
+                    cv2.line(drawn_img, (0, line_y), (640, line_y), (255, 0, 0), 1)
+                    cv2.line(drawn_img, lowest_pt, (lowest_pt[0], line_y), (255, 0, 255), 3)
+                    cv2.circle(drawn_img, lowest_pt, 6, (255, 0, 255), -1)
 
-        if is_detected:
-            self.valid_count += 1
-        
-        accuracy = (self.valid_count / self.total_frames * 100) if self.total_frames > 0 else 0
+                    if diff > self.hunch_thresh:
+                        hunch_txt = f"Drop: {diff:.0f} (BAD)"
+                        hunch_col = (0, 0, 255)
+                    elif diff < -20:
+                        hunch_txt = f"High: {abs(diff):.0f}"
+                        hunch_col = (255, 255, 0)
+                    else:
+                        hunch_txt = "Height: OK"
+                        hunch_col = (0, 255, 0)
 
-        cv2.putText(image, "Cam 1", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(image, f"Acc: {accuracy:.1f}%", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        
-        return image
+                # --- C. 繪製面板 ---
+                cv2.rectangle(drawn_img, (0, 0), (350, 85), (0,0,0), -1)
+                cv2.putText(drawn_img, f"Tilt: {angle:.1f}d ({tilt_status})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, tilt_color, 2)
+                cv2.putText(drawn_img, hunch_txt, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, hunch_col, 2)
+
+        return drawn_img, calib_val, kps
