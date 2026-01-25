@@ -40,13 +40,13 @@ def run_calibration():
 
         display_frame = frame.copy()
 
-        # 如果找到角點，畫出來給你看
+        # 畫出角點
         if ret_corners:
             cv2.drawChessboardCorners(display_frame, BOARD_SIZE, corners, ret_corners)
-            cv2.putText(display_frame, "Ready to Capture (Press 's')", (10, 30), 
+            cv2.putText(display_frame, "Ready to Capture", (10, 30), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         else:
-            cv2.putText(display_frame, "Show Chessboard...", (10, 30), 
+            cv2.putText(display_frame, "Show Chessboard", (10, 30), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
         cv2.putText(display_frame, f"Captured: {count}", (10, 60), 
@@ -72,8 +72,7 @@ def run_calibration():
         print("拍攝張數不足，建議至少 10 張以上以獲得準確結果。")
         return
 
-    print("\n正在計算校正參數 (可能需要幾秒鐘)...")
-    # 核心運算
+    # 計算校正結果
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
 
     print("\n" + "="*40)
