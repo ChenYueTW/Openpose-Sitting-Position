@@ -39,22 +39,21 @@ class CamFront:
         ret, raw_frame = self.cap.read()
         if not ret: return None, None
 
-        # 1. 去畸變
+        # 去畸變
         img = cv2.undistort(raw_frame, self.K, self.D)
 
-        # 2. 骨架偵測 (使用傳入的 Pose 物件)
+        # 架偵測
         kps, drawn_img = pose_estimator.detect(img)
         if drawn_img is None: drawn_img = img
 
         calib_val = None # 用於回傳給主程式
 
-        # 3. 邏輯處理 (如果有點)
         if kps is not None and len(kps) > 0:
             p1 = kps[0]
-            f_rsh, f_lsh = p1[2][:2], p1[5][:2] # 2:右肩, 5:左肩
+            f_rsh, f_lsh = p1[2][:2], p1[5][:2] # 2右肩 5左肩
 
             if f_rsh[0] > 0 and f_lsh[0] > 0:
-                # --- A. Tilt (傾斜) ---
+                # 傾斜
                 dy = f_lsh[1] - f_rsh[1]
                 dx = f_lsh[0] - f_rsh[0]
                 if dx == 0: dx = 0.0001
@@ -67,11 +66,11 @@ class CamFront:
                     tilt_status = "BAD"
                     tilt_color = (0, 0, 255)
 
-                # --- B. Hunch (駝背) ---
+                # 駝背
                 avg_y = (f_lsh[1] + f_rsh[1]) / 2.0
-                calib_val = avg_y # 這就是當下可用的校準值
+                calib_val = avg_y
                 
-                # 找最低點
+                # 最低點
                 lowest_y = max(f_lsh[1], f_rsh[1])
                 lowest_pt = (int(f_lsh[0]), int(f_lsh[1])) if f_lsh[1] > f_rsh[1] else (int(f_rsh[0]), int(f_rsh[1]))
 
@@ -97,7 +96,6 @@ class CamFront:
                         hunch_txt = "Height: OK"
                         hunch_col = (0, 255, 0)
 
-                # --- C. 繪製面板 ---
                 cv2.rectangle(drawn_img, (0, 0), (350, 85), (0,0,0), -1)
                 cv2.putText(drawn_img, f"Tilt: {angle:.1f}d ({tilt_status})", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, tilt_color, 2)
                 cv2.putText(drawn_img, hunch_txt, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, hunch_col, 2)
